@@ -14,48 +14,67 @@ class TrakingDataSet(Dataset):
     def __init__(self,root_dir,transform=None):
         self.root_dir = root_dir
         self.transform = transform
-        self.pathDir = os.listdir(self.root_dir)
-        self.pathDir.sort()
+        self.imgfile = os.path.join(self.root_dir, 'img')
+        if (os.path.exists(self.imgfile) == False):
+            self.imgfile = os.path.join(self.root_dir, 'imgs')
+        self.imgpath = os.listdir(self.imgfile)
+        self.imgpath.sort()
 
     def __len__(self):
-        return self.pathDir.__len__()-1
+        return self.imgpath.__len__()
 
     def __getitem__(self,idex):
-        file_name = os.path.join(self.root_dir, self.pathDir[idex])
+        img_file = os.path.join(self.imgfile,self.imgpath[idex])
         # gt = np.loadtxt(os.path.join(self.root_dir,'groundtruth.txt'), delimiter=',')
+        print(img_file)
+        gt_file = os.path.join(self.root_dir, 'groundtruth.txt')
+        if(os.path.exists(gt_file) == False):
+            gt_file = os.path.join(self.root_dir,'groundtruth_rect.txt')
         try:
-            gt = np.loadtxt(os.path.join(self.root_dir, 'groundtruth.txt'))
+            gt = np.loadtxt(gt_file)
         except Exception, e:
-            gt = np.loadtxt(os.path.join(self.root_dir, 'groundtruth.txt'), delimiter=",")
+            gt = np.loadtxt(gt_file, delimiter=",")
 
-        print(file_name)
 
-        if (file_name.endswith('.txt') == False):
-            image = Image.open(file_name)
-            print(gt[idex])
+        image = Image.open(img_file)
+        print(gt[idex])
 
-            left = round(gt[idex][0],3)
-            up = round(gt[idex][1],3)
-            w = round(left + gt[idex][2],3)
-            h = round(up + gt[idex][3],3)
+        left = round(gt[idex][0],3)
+        up = round(gt[idex][1],3)
+        left_plus_w = round(left + gt[idex][2],3)
+        up_plus_h = round(up + gt[idex][3],3)
 
-            box = (left, up, w, h)
-            #print(box)
+        #convert the values of (x,y,w,h) to (0,1)
+        pre_x = round((gt[idex][0]+gt[idex][2]/2)/image.size[0],3)
+        pre_y = round((gt[idex][1]+gt[idex][3]/2)/image.size[1],3)
+        pre_w = round(gt[idex][2]/image.size[0],3)
+        pre_h = round(gt[idex][3]/image.size[1],3)
+        coordinate = (pre_x,pre_y,pre_w,pre_h)
 
-            patch = image.crop(box)
-            sample = {'image': image, 'patch': patch}
+        box = (left, up, left_plus_w , up_plus_h)
+        #print(box)
+
+        patch = image.crop(box)
+        sample = {'image': image, 'patch': patch, 'coordinate':coordinate}
 
         if self.transform:
             sample = self.transform(sample)
         return sample
 
-trakingSet = TrakingDataSet("/home/icv/PyTorch/Two_Stream_CNN_RNN/biker")
-
+data_root = "/home/icv/PyTorch/TrakingData/otb100"
+path_dir = os.listdir(data_root)
+for path in path_dir:
+    data_path = os.path.join(data_root,path)
+    for sample in TrakingDataSet(data_path):
+        print(sample['image'].size)
+        break;
+"""
 fig = plt.figure()
 
 i=0
 for sample in trakingSet:
     print(sample['image'].size)
+    print(sample['coordinate'])
 
     ax = plt.subplot(1,4,i+1)
     plt.tight_layout()
@@ -66,3 +85,4 @@ for sample in trakingSet:
     if i == 3:
         plt.show()
         break
+"""
