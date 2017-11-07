@@ -1,88 +1,78 @@
-import torch
-import torch.autograd
+import os
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
-from torchvision import datasets, transforms
-from torch.autograd import Variable
-from Two_Stream_Network import Two_Stream_Network
-from Two_Stream_Network import One_Stream_Network
+from TrakingDataSet import TrakingDataSet
+
 from Two_Stream_Network import *
-from Rnn import Rnn
 
-Epoch = 60
+cuda = torch.cuda.is_available()
 
-two_stream = Two_Stream_Network()
-
+two_stream = Two_Stream_Network_v2()
 #one_stream = One_Stream_Network()
 
-#two_stream_v2 = Two_Stream_Network_v2()
+#def get_features_hook(self, input, output):
+    #print "Feature:"
+    #print(output.data.cpu().numpy())
+    #grid = utils.make_grid(features)
+    #plt.imshow(grid.numpy().transpose((1,2,0)))
 
-train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('',
-                   train = True,
-                   download = True,
-                   transform = transforms.Compose([
-                       transforms.ToTensor(),
-                       transforms.Normalize((0.1307,), (0.3081,))
-                   ])),
-    batch_size = 32,
-    shuffle = True
-)
+#two_stream.net1[2].register_forward_hook(get_features_hook)
 
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('',
-                   train = False,
-                   transform = transforms.Compose([
-                       transforms.ToTensor(),
-                       transforms.Normalize((0.1307,), (0.3081,))
-                   ])),
-    batch_size = 16,
-    shuffle = True
-)
-
-#optimizer = torch.optim.Adam(two_stream_v2.parameters(),lr = 0.01)
-
-optimizer = optim.SGD(two_stream.parameters(), lr=0.02, momentum=0.5)
-
-#loss_func = nn.MSELoss()
+Epoch = 20000
+batch_size = 1
 
 
+if cuda:
+    print("GPU")
+    two_stream = two_stream.cuda()
 
-def train(epoch):
-    for batch_idx,(data,lable) in enumerate(train_loader):
-        data,lable =  Variable(data),Variable(lable)
-        optimizer.zero_grad()
-        #output = two_stream_v2(data,data)
-        output = two_stream(data,data)
-        #output = one_stream(data)
-        loss = F.nll_loss(output,lable)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % 10 == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                     epoch, batch_idx * len(data), len(train_loader.dataset),
-                    100. * batch_idx / len(train_loader), loss.data[0]))
+#optimizer = torch.optim.Adam(two_stream.parameters(),lr = 0.01)
+optimizer = torch.optim.SGD(two_stream.parameters(), lr=0.1)
+#optimizer = optim.SGD(two_stream.parameters(), lr=0.02, momentum=0.75)
 
-
-def test(epoch):
-    test_loss = 0
-    correct = 0
-    for data, target in test_loader:
-        data, target = Variable(data, volatile=True), Variable(target)
-        #output = two_stream_v2(data,data)
-        output = two_stream(data,data)
-        #output = one_stream(data)
-        test_loss += F.nll_loss(output, target).data[0]
-        pred = output.data.max(1)[1]
-        correct += pred.eq(target.data).cpu().sum()
+loss_func = nn.MSELoss()
+data_root = "/home/icv/PyTorch/TrakingData/otb100"
+path_dir = os.listdir(data_root)
+transform = transforms.Compose([
+                transforms.Scale((224,224)),
+                transforms.ToTensor()
+])
 
 
-    test_loss /= len(test_loader)
-    print('\nTest set: Average loss:{:.4f},Accuracy: {}/{} ({:.0f}%)\n'.format(test_loss, correct, len(test_loader.dataset),
-                                                                               100.* correct / len(test_loader.dataset)))
+def traking_train(epoch):
+    two_stream.train()
+    hstate = None
+    for path in path_dir:
+        data_path = os.path.join(data_root, path)
+        print(data_path)
+        trakingset = TrakingDataSet(data_path, transform)
+        dataloader = torch.utils.data.DataLoader(trakingset, batch_size = batch_size, shuffle=False)
+        for batch_indx,sample in enumerate(dataloader):
+            if cuda:
+                image,lable,coordinate,patch = sample['image'].cuda(),sample['lable'].cuda(),sample['coordinate'].cuda(),sample['patch'].cuda()
+            #coordinate = coordinate.view(1,-1,4)
+            image,lable,coordinate,patch =  Variable(image),Variable(lable),Variable(coordinate),Variable(patch)
+
+            #output = two_stream_v2(data,data)
+            #print("ImageBatch:{}".format(len(image)))
+            output,hstate = two_stream(image,patch,hstate,coordinate)
+            h = Variable(hstate[0].data)  # repack the hidden state, break the connection from last iteration
+            c = Variable(hstate[1].data)
+            hstate = (h, c)
+            #output = one_stream(data)
+            loss = loss_func(output,lable)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            if batch_indx % 10 == 0:
+                prediction = output.data.cpu().numpy()
+                groudth = lable.data.cpu().numpy()
+                #for i in range(batch_indx):
+                print ('Train Epoch: [{}/{}] Prediction:{} Grounth:{} Loss: {:.6f} '.format(
+                        epoch, Epoch,prediction[0][0], groudth[0], loss.data[0]))
 
 for epoch in range(Epoch):
-    train(epoch)
-    test(epoch)
+    traking_train(epoch)
