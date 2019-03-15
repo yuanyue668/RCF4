@@ -1,3 +1,13 @@
-# RCF4
+## RCF4
 
-This is my work during my master's degree, it is a tenstative program for object traking which is a field in computer vision
+A Scale Adaptive Object Tracking Algorithm with Occlusion Detection implement
+
+## Enviroment
+* Ubuntu 16.04 LST
+* Python 2.7
+* PyTorch 0.2
+
+## Tutorial
+1. Download a resnet pytorch model
+2. python run_RCF4.py for OTB evalution
+3. vot_rcf is for VOT evalution
